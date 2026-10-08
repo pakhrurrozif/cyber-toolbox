@@ -30,6 +30,11 @@ jobs:
           mkdir -p _site
           cp index.html styles.css app.js _site/
           touch _site/.nojekyll
+          # Versi commit di URL aset: browser tidak bisa memakai app.js lama dengan index.html baru.
+          SHA="${GITHUB_SHA::8}"
+          sed -i -e "s#src=\"app.js\"#src=\"app.js?v=${SHA}\"#" -e "s#href=\"styles.css\"#href=\"styles.css?v=${SHA}\"#" _site/index.html
+          grep -q "app.js?v=${SHA}" _site/index.html
+          grep -q "styles.css?v=${SHA}" _site/index.html
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
