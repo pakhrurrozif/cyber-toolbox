@@ -33,6 +33,9 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          # Coba aktifkan Pages (source: GitHub Actions) bila belum aktif.
+          enablement: true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
