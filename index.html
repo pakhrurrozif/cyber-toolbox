@@ -57,7 +57,7 @@
 
   <main class="max-w-6xl mx-auto px-4 py-6">
 
-    <!-- ===================== 1. IOC Extractor ===================== -->
+    <!-- 1. IOC Extractor -->
     <section id="panel-ioc" class="tool-panel" role="tabpanel" aria-labelledby="tab-ioc" hidden>
       <div class="panel-head">
         <h2>IOC Extractor</h2>
@@ -96,7 +96,7 @@
       </div>
     </section>
 
-    <!-- ===================== 2. Hash & Encode ===================== -->
+    <!-- 2. Hash & Encode -->
     <section id="panel-hash" class="tool-panel" role="tabpanel" aria-labelledby="tab-hash" hidden>
       <div class="panel-head">
         <h2>Hash &amp; Encode</h2>
@@ -150,7 +150,7 @@
       </div>
     </section>
 
-    <!-- ===================== 3. JWT Decoder ===================== -->
+    <!-- 3. JWT Decoder -->
     <section id="panel-jwt" class="tool-panel" role="tabpanel" aria-labelledby="tab-jwt" hidden>
       <div class="panel-head">
         <h2>JWT Decoder</h2>
@@ -189,7 +189,7 @@
       </div>
     </section>
 
-    <!-- ===================== 4. Password Generator ===================== -->
+    <!-- 4. Password Generator -->
     <section id="panel-password" class="tool-panel" role="tabpanel" aria-labelledby="tab-password" hidden>
       <div class="panel-head">
         <h2>Password Generator</h2>
@@ -252,7 +252,7 @@
       </div>
     </section>
 
-    <!-- ===================== 5. URL Inspector ===================== -->
+    <!-- 5. URL Inspector -->
     <section id="panel-url" class="tool-panel" role="tabpanel" aria-labelledby="tab-url" hidden>
       <div class="panel-head">
         <h2>URL Inspector</h2>
@@ -271,7 +271,7 @@
       <div id="urlResult"><div class="card empty">Masukkan URL untuk mulai.</div></div>
     </section>
 
-    <!-- ===================== 6. Subdomain Finder ===================== -->
+    <!-- 6. Subdomain Finder -->
     <section id="panel-subdomain" class="tool-panel" role="tabpanel" aria-labelledby="tab-subdomain" hidden>
       <div class="panel-head">
         <div class="flex flex-wrap items-center gap-2">
@@ -333,45 +333,59 @@
       </div>
     </section>
 
-    <!-- ===================== 7. Website Crawler ===================== -->
+    <!-- 7. Website Crawler -->
     <section id="panel-crawler" class="tool-panel" role="tabpanel" aria-labelledby="tab-crawler" hidden>
       <div class="panel-head">
         <div class="flex flex-wrap items-center gap-2">
           <h2>Website Crawler</h2>
           <span class="badge badge-warn">Memerlukan koneksi internet</span>
         </div>
-        <p class="muted">Ambil satu halaman (kedalaman 1 level) lalu ekstrak link, script, stylesheet, gambar, form, dan email. HTML hanya di-parse, tidak pernah dijalankan.</p>
+        <p class="muted">Ambil satu halaman lalu inventaris link, script, stylesheet, gambar, form, dan email di dalamnya. Link tidak diikuti (kedalaman 1) dan HTML hanya di-parse, tidak dijalankan.</p>
       </div>
       <div class="alert alert-warn mb-4">
-        HTML diambil lewat CORS proxy publik <code>api.allorigins.win</code>: URL target terlihat oleh operator proxy, layanan bisa lambat atau membatasi jumlah request (rate limit). Jangan crawl halaman internal atau berisi data sensitif, dan hormati ketentuan situs target.
+        Browser tidak bisa membaca HTML situs lain secara langsung (CORS), jadi halaman diambil lewat proxy publik: <code>api.allorigins.win</code>, lalu <code>api.codetabs.com</code> dan <code>corsproxy.io</code> bila gagal. URL target terlihat oleh operator proxy, dan layanan ini bisa lambat atau membatasi jumlah request. Jangan crawl halaman internal atau berisi data sensitif.
       </div>
-      <div class="card mb-4">
+
+      <form id="crawlForm" class="card mb-4" novalidate>
         <label for="crawlUrl" class="label">URL target</label>
         <div class="flex flex-col sm:flex-row gap-2">
-          <input id="crawlUrl" class="input mono" type="text" spellcheck="false" autocomplete="off" placeholder="https://example.com">
-          <button type="button" id="crawlStart" class="btn btn-primary">Crawl</button>
+          <input id="crawlUrl" class="input mono" type="text" inputmode="url" spellcheck="false" autocomplete="off" placeholder="https://example.com">
+          <div class="flex gap-2">
+            <button type="submit" id="crawlStart" class="btn btn-primary flex-1 sm:flex-none">Crawl halaman</button>
+            <button type="button" id="crawlCancel" class="btn" hidden>Batal</button>
+          </div>
         </div>
-        <div id="crawlStatus" class="mt-3"></div>
-      </div>
-      <div id="crawlOutput" hidden>
-        <div class="card mb-4">
-          <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-            <h3 class="card-title mb-0">Ringkasan</h3>
+        <ol id="crawlAttempts" class="attempts" aria-live="polite" aria-label="Percobaan proxy" hidden></ol>
+        <div id="crawlStatus" class="mt-3" aria-live="polite"></div>
+      </form>
+
+      <div id="crawlEmpty" class="card empty">Belum ada halaman yang di-crawl. Masukkan URL di atas lalu tekan <strong>Crawl halaman</strong>.</div>
+
+      <article id="crawlReport" class="card crawl-report" aria-labelledby="crawlTitle" hidden>
+        <header class="report-head">
+          <div class="min-w-0">
+            <p id="crawlMeta" class="report-meta"></p>
+            <h3 id="crawlTitle" class="report-title"></h3>
+            <a id="crawlLink" class="mono report-url" target="_blank" rel="noopener noreferrer nofollow"></a>
+            <p id="crawlDesc" class="report-desc"></p>
+          </div>
+          <div class="report-actions">
+            <button type="button" id="crawlCopy" class="btn btn-sm">Copy tab ini</button>
+            <button type="button" id="crawlCsv" class="btn btn-sm">Export CSV</button>
             <button type="button" id="crawlExport" class="btn btn-sm">Export JSON</button>
           </div>
-          <div id="crawlSummary"></div>
+        </header>
+        <dl id="crawlFacts" class="facts"></dl>
+        <div id="crawlNotes" class="mb-5"></div>
+        <div id="crawlTabs" class="count-tabs" role="tablist" aria-label="Isi halaman"></div>
+        <div id="crawlTabPanel" role="tabpanel" class="pt-3">
+          <input id="crawlFilter" class="input text-sm" type="search" placeholder="Filter: domain, path, atau teks link" aria-label="Filter item di tab ini">
+          <div id="crawlList" class="crawl-list mt-3"></div>
         </div>
-        <div class="card">
-          <div id="crawlTabs" class="subtabs" role="tablist" aria-label="Hasil crawl"></div>
-          <div class="mt-3">
-            <input id="crawlFilter" class="input text-sm" type="search" placeholder="Filter hasil…" aria-label="Filter hasil">
-          </div>
-          <div id="crawlList" class="mt-3 overflow-auto" style="max-height: 32rem"></div>
-        </div>
-      </div>
+      </article>
     </section>
 
-    <!-- ===================== 8. Is It Down ===================== -->
+    <!-- 8. Is It Down -->
     <section id="panel-isdown" class="tool-panel" role="tabpanel" aria-labelledby="tab-isdown" hidden>
       <div class="panel-head">
         <div class="flex flex-wrap items-center gap-2">
@@ -401,7 +415,7 @@
       </div>
     </section>
 
-    <!-- ===================== 9. Network Check ===================== -->
+    <!-- 9. Network Check -->
     <section id="panel-network" class="tool-panel" role="tabpanel" aria-labelledby="tab-network" hidden>
       <div class="panel-head">
         <div class="flex flex-wrap items-center gap-2">

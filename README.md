@@ -14,7 +14,7 @@ Kumpulan alat cybersecurity harian dalam satu halaman web statis. Dibuat dengan 
 | 4 | **Password** | Generator password (8–64 karakter, uppercase/lowercase/digits/symbols, exclude ambiguous) dan passphrase. Estimasi entropi, label kekuatan, estimasi waktu tebak. | – |
 | 5 | **URL Inspector** | Urai scheme, hostname, port, path, query, fragment. Deteksi punycode/IDN, karakter non-ASCII, campuran skrip (homograph), kredensial di URL, dan cek HTTPS. | – |
 | 6 | **Subdomain Finder** | Cek ±180 subdomain umum via DNS-over-HTTPS Cloudflare. Maks 10 request paralel, progress bar, tombol stop, deteksi wildcard DNS, export CSV/JSON. | ✔ |
-| 7 | **Website Crawler** | Ambil satu halaman via CORS proxy, parse dengan `DOMParser`, tampilkan title, meta description, link internal/eksternal, script, stylesheet, gambar, form, dan email. Kedalaman 1 level. | ✔ |
+| 7 | **Website Crawler** | Ambil satu halaman via CORS proxy (allorigins, cadangan codetabs dan corsproxy.io), parse dengan `DOMParser`, tampilkan title, meta description, link internal/eksternal, script, stylesheet, gambar, form, dan email, plus catatan keamanan (mixed content, form password ke HTTP/domain lain, script pihak ketiga). Kedalaman 1 level, bisa dibatalkan, export CSV/JSON. | ✔ |
 | 8 | **Is It Down** | Tiga cek paralel (DNS DoH, HTTP HEAD via proxy, koneksi langsung `no-cors`), status Online / Down / DNS-only / Unknown, waktu respons, riwayat 10 cek terakhir di localStorage. | ✔ |
 | 9 | **Network Check** | IP publik, estimasi lokasi & ISP, info `navigator.connection`, status online, user agent, bahasa, timezone, dan latency ke Cloudflare, Google DNS, GitHub. Tombol copy semua. | ✔ |
 
@@ -25,6 +25,7 @@ Kumpulan alat cybersecurity harian dalam satu halaman web statis. Dibuat dengan 
 | `cdn.tailwindcss.com` | Semua (styling) | Request standar pemuatan script |
 | `cloudflare-dns.com` (DoH JSON) | Tool 6, 8 | Nama domain yang dicek |
 | `api.allorigins.win` (CORS proxy) | Tool 7, 8 | URL target |
+| `api.codetabs.com`, `corsproxy.io` (proxy cadangan) | Tool 7, hanya jika allorigins gagal | URL target |
 | Target yang Anda masukkan | Tool 8 (koneksi langsung) | Request `no-cors` tanpa cookie |
 | `api.ipify.org`, `ipapi.co` | Tool 9 | IP Anda (otomatis terlihat oleh server) |
 | `1.1.1.1`, `dns.google`, `github.com` | Tool 9 (latency) | Request kecil tanpa cookie |
