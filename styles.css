@@ -1,9 +1,4 @@
-/* =========================================================
-   Cyber Toolbox — komponen dasar.
-   Tailwind (CDN) dipakai untuk layout; warna & komponen di sini
-   supaya tema gelap/terang konsisten dan tetap terbaca
-   walau CDN gagal dimuat.
-   ========================================================= */
+/* Tailwind CDN mengatur layout. Warna dan komponen ada di sini agar tema konsisten dan tetap terbaca bila CDN gagal dimuat. */
 
 :root {
   --bg: #f6f7f9;
@@ -81,7 +76,7 @@ a:hover { text-decoration: underline; }
 .text-bad { color: var(--bad); }
 .text-warn { color: var(--warn); }
 
-/* ---------- Header & tab ---------- */
+/* Header & tab */
 .site-header {
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   border-bottom: 1px solid var(--border);
@@ -147,7 +142,7 @@ a:hover { text-decoration: underline; }
   background: var(--warn);
 }
 
-/* ---------- Panel & kartu ---------- */
+/* Panel & kartu */
 .panel-head { margin-bottom: 1rem; }
 .panel-head h2 {
   margin: 0;
@@ -179,7 +174,7 @@ a:hover { text-decoration: underline; }
   margin-bottom: 0.35rem;
 }
 
-/* ---------- Form ---------- */
+/* Form */
 .input {
   width: 100%;
   background: var(--surface);
@@ -210,7 +205,7 @@ select.input { cursor: pointer; }
 
 input[type="range"] { width: 100%; accent-color: var(--accent); }
 
-/* ---------- Tombol ---------- */
+/* Tombol */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -255,7 +250,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 }
 .copy-btn:hover { color: var(--text); background: var(--surface-2); }
 
-/* ---------- Badge & status ---------- */
+/* Badge & status */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -298,7 +293,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .alert-error { background: var(--bad-soft); color: var(--text); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
 .alert strong { font-weight: 600; }
 
-/* ---------- Daftar hasil ---------- */
+/* Daftar hasil */
 .result-group { border: 1px solid var(--border); border-radius: 0.5rem; overflow: hidden; }
 .result-group-head {
   display: flex;
@@ -340,7 +335,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   font-size: 0.9rem;
 }
 
-/* ---------- Tabel ---------- */
+/* Tabel */
 .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; }
 .table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .table th, .table td { text-align: left; padding: 0.5rem 0.75rem; border-top: 1px solid var(--border); vertical-align: top; }
@@ -362,7 +357,7 @@ pre.code {
   overflow-wrap: anywhere;
 }
 
-/* ---------- Progress & meter ---------- */
+/* Progress & meter */
 .progress {
   height: 0.5rem;
   border-radius: 999px;
@@ -384,24 +379,108 @@ pre.code {
 .meter-3 > span { background: var(--ok); }
 .meter-4 > span { background: var(--ok); }
 
-/* ---------- Sub-tab (crawler) ---------- */
-.subtabs { display: flex; gap: 0.25rem; overflow-x: auto; border-bottom: 1px solid var(--border); }
-.subtab {
-  flex: none;
+/* Website Crawler */
+.attempts {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+.attempt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.6rem; }
+.attempt-state { min-width: 5.5rem; font-weight: 600; }
+.attempt-ok .attempt-state { color: var(--ok); }
+.attempt-fail .attempt-state { color: var(--bad); }
+.attempt-pending .attempt-state { color: var(--muted); }
+
+.crawl-report { padding: 1.25rem; }
+.report-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.report-meta { margin: 0; font-size: 0.8rem; color: var(--muted); }
+.report-title {
+  margin: 0.2rem 0 0.35rem;
+  font-size: clamp(1.35rem, 3.2vw, 1.85rem);
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+.report-url { font-size: 0.85rem; overflow-wrap: anywhere; }
+.report-desc { margin: 0.6rem 0 0; max-width: 68ch; font-size: 0.92rem; }
+.report-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: 0.85rem 1rem;
+  margin: 1.1rem 0 1.25rem;
+}
+.facts .fact-wide { grid-column: 1 / -1; }
+.facts dt { font-size: 0.75rem; color: var(--muted); }
+.facts dd { margin: 0.1rem 0 0; font-size: 0.9rem; font-weight: 500; overflow-wrap: anywhere; }
+
+.notes-title { margin: 0 0 0.5rem; font-size: 0.9rem; font-weight: 600; }
+.notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.note {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
   padding: 0.5rem 0.75rem;
-  min-height: 40px;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+}
+.note-warn { background: var(--warn-soft); }
+.note-info { background: var(--surface-2); }
+.note-label { flex: none; min-width: 4.75rem; font-size: 0.78rem; font-weight: 700; }
+.note-warn .note-label { color: var(--warn); }
+.note-info .note-label { color: var(--muted); }
+
+/* Jumlah item jadi label tab: isi halaman terbaca sebelum tab dibuka. */
+.count-tabs { display: flex; overflow-x: auto; border-bottom: 1px solid var(--border); scrollbar-width: thin; }
+.count-tab {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  min-height: 44px;
+  padding: 0.5rem 1rem 0.55rem;
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-bottom: 3px solid transparent;
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 0.85rem;
+  text-align: left;
   cursor: pointer;
-  white-space: nowrap;
 }
-.subtab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.count-tab:hover { color: var(--text); }
+.count-tab .n { font-size: 1.45rem; font-weight: 700; line-height: 1.1; color: var(--text); font-variant-numeric: tabular-nums; }
+.count-tab .n.zero { color: var(--muted); font-weight: 500; }
+.count-tab .l { font-size: 0.78rem; white-space: nowrap; }
+.count-tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
 
-/* ---------- Spinner ---------- */
+.crawl-list { display: grid; gap: 0.75rem; max-height: 34rem; overflow: auto; }
+.row-text { display: block; margin-top: 0.1rem; font-size: 0.78rem; color: var(--muted); }
+.field-chip {
+  display: inline-flex;
+  gap: 0.35rem;
+  margin: 0.15rem 0.3rem 0.15rem 0;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background: var(--surface-2);
+  font-size: 0.75rem;
+}
+
+/* Spinner */
 .spinner {
   display: inline-block;
   width: 0.9rem;
@@ -414,7 +493,7 @@ pre.code {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ---------- Toast ---------- */
+/* Toast */
 .toast {
   position: fixed;
   left: 50%;
@@ -434,6 +513,15 @@ pre.code {
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 [hidden] { display: none !important; }
+
+@media (max-width: 480px) {
+  .note { flex-direction: column; gap: 0.15rem; }
+}
+
+/* Target sentuh minimal 44px di perangkat layar sentuh. */
+@media (pointer: coarse) {
+  .copy-btn, .btn-sm { min-height: 44px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation-duration: 0.01ms !important; }
