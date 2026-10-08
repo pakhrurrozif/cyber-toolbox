@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Cyber Toolbox</title>
-  <meta name="description" content="Kumpulan alat cybersecurity harian yang berjalan 100% di browser: IOC extractor, hash & encode, JWT decoder, password generator, URL inspector, subdomain finder, crawler, is-it-down, dan network check.">
+  <meta name="description" content="Kumpulan alat cybersecurity harian yang berjalan 100% di browser: IOC extractor, hash & encode, JWT decoder, password generator, URL inspector, subdomain finder, email & DNS check, is-it-down, dan network check.">
   <meta name="referrer" content="no-referrer">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23047857' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z'/%3E%3Cpath d='M9 12l2 2 4-4'/%3E%3C/svg%3E">
   <script>
@@ -52,7 +52,7 @@
         <p class="toolnav-label" id="grp-net">Jaringan, butuh internet</p>
         <div class="toolnav-list" role="tablist" aria-labelledby="grp-net">
           <button type="button" class="tab-btn" role="tab" id="tab-subdomain" data-tab="subdomain" aria-controls="panel-subdomain"><span class="tab-num">6</span>Subdomain Finder</button>
-          <button type="button" class="tab-btn" role="tab" id="tab-crawler" data-tab="crawler" aria-controls="panel-crawler"><span class="tab-num">7</span>Website Crawler</button>
+          <button type="button" class="tab-btn" role="tab" id="tab-mailsec" data-tab="mailsec" aria-controls="panel-mailsec"><span class="tab-num">7</span>Email &amp; DNS Check</button>
           <button type="button" class="tab-btn" role="tab" id="tab-isdown" data-tab="isdown" aria-controls="panel-isdown"><span class="tab-num">8</span>Is It Down</button>
           <button type="button" class="tab-btn" role="tab" id="tab-network" data-tab="network" aria-controls="panel-network"><span class="tab-num">9</span>Network Check</button>
         </div>
@@ -337,53 +337,39 @@
       </div>
     </section>
 
-    <!-- 7. Website Crawler -->
-    <section id="panel-crawler" class="tool-panel" role="tabpanel" aria-labelledby="tab-crawler" hidden>
+    <!-- 7. Email & DNS Check -->
+    <section id="panel-mailsec" class="tool-panel" role="tabpanel" aria-labelledby="tab-mailsec" hidden>
       <header class="panel-head">
-        <h2><span class="panel-num">07</span>Website Crawler</h2>
-        <p>Ambil satu halaman lalu inventaris link, script, stylesheet, gambar, form, dan email di dalamnya. Link tidak diikuti (kedalaman 1) dan HTML hanya di-parse, tidak dijalankan.</p>
-        <p class="net-line"><span class="badge badge-warn">Memerlukan koneksi internet</span><span>Menghubungi proxy <code>api.allorigins.win</code>, cadangan <code>api.codetabs.com</code> dan <code>corsproxy.io</code></span></p>
+        <h2><span class="panel-num">07</span>Email &amp; DNS Check</h2>
+        <p>Periksa SPF, DMARC, DKIM, MTA-STS, CAA, dan DNSSEC sebuah domain dari record DNS publik: seberapa mudah email atas nama domain itu dipalsukan, dan siapa yang boleh menerbitkan sertifikatnya.</p>
+        <p class="net-line"><span class="badge badge-warn">Memerlukan koneksi internet</span><span>Menghubungi <code>cloudflare-dns.com</code></span></p>
       </header>
-      <div class="alert alert-warn mb-4">
-        Browser tidak bisa membaca HTML situs lain secara langsung (CORS), jadi halaman diambil lewat proxy publik, dicoba berurutan sampai satu berhasil. Operator proxy melihat URL target, dan layanannya bisa lambat atau membatasi jumlah request. Jangan crawl halaman internal atau berisi data sensitif.
-      </div>
 
-      <form id="crawlForm" class="card mb-4" novalidate>
-        <label for="crawlUrl" class="label">URL target</label>
+      <form id="mailForm" class="card mb-4" novalidate>
+        <label for="mailDomain" class="label">Domain</label>
         <div class="flex flex-col sm:flex-row gap-2">
-          <input id="crawlUrl" class="input mono" type="text" inputmode="url" spellcheck="false" autocomplete="off" placeholder="https://example.com">
-          <div class="flex gap-2">
-            <button type="submit" id="crawlStart" class="btn btn-primary flex-1 sm:flex-none">Crawl halaman</button>
-            <button type="button" id="crawlCancel" class="btn" hidden>Batal</button>
-          </div>
+          <input id="mailDomain" class="input mono" type="text" inputmode="url" spellcheck="false" autocomplete="off" placeholder="example.com">
+          <button type="submit" id="mailStart" class="btn btn-primary">Periksa domain</button>
         </div>
-        <ol id="crawlAttempts" class="attempts" aria-live="polite" aria-label="Percobaan proxy" hidden></ol>
-        <div id="crawlStatus" class="mt-3" aria-live="polite"></div>
+        <p class="muted text-xs mt-2">Hanya membaca record DNS publik, tidak ada email yang dikirim. Selector DKIM ditebak dari daftar umum, jadi "tidak ditemukan" belum tentu berarti DKIM tidak dipakai.</p>
+        <div id="mailStatus" class="mt-3" aria-live="polite"></div>
       </form>
 
-      <div id="crawlEmpty" class="card empty">Belum ada halaman yang di-crawl. Masukkan URL di atas lalu tekan <strong>Crawl halaman</strong>.</div>
+      <div id="mailEmpty" class="card empty">Belum ada domain yang diperiksa. Masukkan domain di atas lalu tekan <strong>Periksa domain</strong>.</div>
 
-      <article id="crawlReport" class="card crawl-report" aria-labelledby="crawlTitle" hidden>
+      <article id="mailReport" class="card report-card" aria-labelledby="mailTitle" hidden>
         <header class="report-head">
           <div class="min-w-0">
-            <p id="crawlMeta" class="report-meta"></p>
-            <h3 id="crawlTitle" class="report-title"></h3>
-            <a id="crawlLink" class="mono report-url" target="_blank" rel="noopener noreferrer nofollow"></a>
-            <p id="crawlDesc" class="report-desc"></p>
+            <p id="mailMeta" class="report-meta"></p>
+            <h3 id="mailTitle" class="report-title mono"></h3>
+            <p id="mailTally" class="check-tally"></p>
           </div>
           <div class="report-actions">
-            <button type="button" id="crawlCopy" class="btn btn-sm">Copy tab ini</button>
-            <button type="button" id="crawlCsv" class="btn btn-sm">Export CSV</button>
-            <button type="button" id="crawlExport" class="btn btn-sm">Export JSON</button>
+            <button type="button" id="mailCopy" class="btn btn-sm">Copy laporan</button>
+            <button type="button" id="mailJson" class="btn btn-sm">Export JSON</button>
           </div>
         </header>
-        <dl id="crawlFacts" class="facts"></dl>
-        <div id="crawlNotes" class="mb-5"></div>
-        <div id="crawlTabs" class="count-tabs" role="tablist" aria-label="Isi halaman"></div>
-        <div id="crawlTabPanel" role="tabpanel" class="pt-3">
-          <input id="crawlFilter" class="input text-sm" type="search" placeholder="Filter: domain, path, atau teks link" aria-label="Filter item di tab ini">
-          <div id="crawlList" class="crawl-list mt-3"></div>
-        </div>
+        <ol id="mailChecks" class="checks" aria-label="Hasil pemeriksaan, yang perlu diperbaiki lebih dulu"></ol>
       </article>
     </section>
 
