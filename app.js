@@ -199,11 +199,10 @@
   // Tema (dark mode)
   function applyTheme(dark) {
     document.documentElement.classList.toggle('dark', dark);
-    const btn = $('#themeToggle');
-    btn.setAttribute('aria-pressed', String(dark));
-    btn.setAttribute('aria-label', dark ? 'Aktifkan mode terang' : 'Aktifkan mode gelap');
-    $('.icon-moon', btn).hidden = dark;
-    $('.icon-sun', btn).hidden = !dark;
+    // Label tombol menyebut aksi berikutnya, ikon mengikuti.
+    $('#themeLabel').textContent = dark ? 'Mode terang' : 'Mode gelap';
+    $('#themeToggle .icon-moon').hidden = dark;
+    $('#themeToggle .icon-sun').hidden = !dark;
   }
 
   applyTheme(document.documentElement.classList.contains('dark'));
@@ -225,7 +224,10 @@
       btn.tabIndex = active ? 0 : -1;
       $('#panel-' + btn.dataset.tab).hidden = !active;
       if (active) {
-        btn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        // Geser strip mobile secara manual: scrollIntoView ikut memindahkan titik awal tombol Tab.
+        const nav = $('#tabbar');
+        const r = btn.getBoundingClientRect(), nr = nav.getBoundingClientRect();
+        if (r.left < nr.left || r.right > nr.right) nav.scrollLeft += r.left - nr.left - 16;
         if (focus) btn.focus();
       }
     });
@@ -236,14 +238,22 @@
   $('#tabbar').addEventListener('keydown', (e) => {
     const idx = tabButtons.findIndex((b) => b.getAttribute('aria-selected') === 'true');
     let next = null;
-    if (e.key === 'ArrowRight') next = (idx + 1) % tabButtons.length;
-    else if (e.key === 'ArrowLeft') next = (idx - 1 + tabButtons.length) % tabButtons.length;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (idx + 1) % tabButtons.length;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (idx - 1 + tabButtons.length) % tabButtons.length;
     else if (e.key === 'Home') next = 0;
     else if (e.key === 'End') next = tabButtons.length - 1;
     if (next !== null) {
       e.preventDefault();
       activateTab(TAB_IDS[next], { focus: true });
     }
+  });
+
+  // Angka 1-9 memilih alat, kecuali saat sedang mengetik di field.
+  document.addEventListener('keydown', (e) => {
+    if (e.altKey || e.ctrlKey || e.metaKey || !/^[1-9]$/.test(e.key)) return;
+    const el = document.activeElement;
+    if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) return;
+    activateTab(TAB_IDS[Number(e.key) - 1]);
   });
 
   // 1. IOC Extractor

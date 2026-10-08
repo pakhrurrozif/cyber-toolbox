@@ -47,11 +47,12 @@ Catatan:
 
 - Tailwind dimuat dari CDN, jadi tampilan penuh membutuhkan internet saat halaman pertama dibuka. Tanpa CDN, `styles.css` tetap menyediakan warna dan komponen dasar.
 - Sebagian browser menonaktifkan `crypto.subtle` atau clipboard pada `file://`. Jika hash tidak muncul, gunakan server lokal (`localhost`) atau GitHub Pages.
-- Tekan panah kiri/kanan pada tab bar untuk berpindah tool dengan keyboard.
+- Di desktop, daftar alat ada di sisi kiri; di layar kecil menjadi strip yang bisa digeser.
+- Keyboard: tekan angka `1` sampai `9` (saat tidak sedang mengetik) untuk langsung membuka alat, atau gunakan tombol panah di daftar alat. Tab pertama membuka tautan "Lewati ke konten".
 
 ## Cara deploy ke GitHub Pages
 
-Workflow `.github/workflows/deploy.yml` men-deploy otomatis setiap ada push ke branch `main`.
+Workflow `.github/workflows/deploy.yml` men-deploy otomatis setiap ada push ke branch `main`. Saat deploy, URL `app.js` dan `styles.css` diberi versi commit (`?v=<sha>`) agar browser tidak memakai file lama dari cache.
 
 1. Pastikan kode ada di branch `main`.
 2. Buka **Settings → Pages** di repo GitHub.
