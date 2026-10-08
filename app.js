@@ -1022,424 +1022,289 @@ v1 v2 my dashboard console panel manage manager crm2 helpdesk ticket tickets lea
     download(`subdomains-${stamp()}.json`, JSON.stringify({ wildcard: subWildcard, results: subResults }, null, 2), 'application/json');
   });
 
-  // 7. Website Crawler: hanya halaman awal (kedalaman 1), link tidak diikuti.
+  // 7. Email & DNS Check: postur keamanan email dan DNS dari record publik lewat Cloudflare DoH (tanpa proxy).
 
-  // Proxy publik gratis sering down atau kena rate limit, jadi dicoba berurutan.
-  const CRAWL_PROXIES = [
-    { name: 'allorigins (raw)', url: (u) => PROXY_RAW + encodeURIComponent(u), read: readProxyText },
-    { name: 'allorigins (get)', url: (u) => PROXY_GET + encodeURIComponent(u), read: readAlloriginsJson },
-    { name: 'codetabs', url: (u) => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(u), read: readProxyText },
-    { name: 'corsproxy.io', url: (u) => 'https://corsproxy.io/?url=' + encodeURIComponent(u), read: readProxyText },
-  ];
-  const MAX_HTML_CHARS = 5_000_000;
+  // Selector DKIM tidak bisa dienumerasi lewat DNS, jadi hanya selector umum penyedia populer yang dicoba.
+  const DKIM_SELECTORS = ['default', 'google', 'selector1', 'selector2', 'k1', 'k2', 's1', 's2', 'dkim', 'mail', 'smtp', 'mandrill', 'pm', 'zoho', 'mxvault', 'everlytic'];
+  const CHECK_ORDER = { fail: 0, warn: 1, error: 2, pass: 3, info: 4 };
+  const CHECK_LABEL = { pass: 'Lolos', warn: 'Peringatan', fail: 'Gagal', info: 'Info', error: 'Tidak terbaca' };
+  const CHECK_TONE = { pass: 'ok', warn: 'warn', fail: 'bad', info: 'unk', error: 'unk' };
 
-  const CRAWL_TABS = [
-    ['internal', 'Internal links', 'Tidak ada link ke domain yang sama di halaman ini.'],
-    ['external', 'External links', 'Halaman ini tidak menautkan domain lain.'],
-    ['scripts', 'Scripts', 'Tidak ada script eksternal (src). Script inline dihitung di ringkasan.'],
-    ['stylesheets', 'Stylesheets', 'Tidak ada stylesheet eksternal.'],
-    ['images', 'Images', 'Tidak ada tag img dengan src.'],
-    ['forms', 'Forms', 'Halaman ini tidak memiliki form.'],
-    ['emails', 'Emails', 'Tidak ada alamat email di HTML maupun link mailto.'],
-  ];
+  let mailReport = null;
+  let mailBusy = false;
 
-  let crawlData = null;
-  let crawlTab = 'internal';
-  let crawlAbort = null;
-
-  const stripWww = (h) => h.replace(/^www\./, '');
-  const hostOf = (u) => { try { return new URL(u).hostname; } catch { return ''; } };
-
-  async function readProxyText(res) {
-    if (!res.ok) throw new Error(`HTTP ${res.status}${res.status === 429 ? ' (rate limit)' : ''}`);
-    return { html: await res.text(), httpStatus: null, contentType: res.headers.get('content-type') || '' };
+  // Record TXT panjang dipecah per 255 byte dalam beberapa string berkutip; gabungkan kembali.
+  function txtValue(data) {
+    const parts = [...String(data).matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1].replace(/\\(.)/g, '$1'));
+    return parts.length ? parts.join('') : String(data);
   }
 
-  // Endpoint /get membungkus HTML dalam JSON dan ikut melaporkan kode HTTP asli target.
-  async function readAlloriginsJson(res) {
-    if (!res.ok) throw new Error(`HTTP ${res.status}${res.status === 429 ? ' (rate limit)' : ''}`);
-    const data = await res.json();
-    const code = data?.status?.http_code || null;
-    if (!data?.contents) throw new Error(code ? `target membalas HTTP ${code} tanpa isi` : 'target tidak merespons ke proxy');
-    if (data.contents.startsWith('data:')) throw new Error('respons target bukan teks');
-    return { html: data.contents, httpStatus: code, contentType: data.status?.content_type || '' };
+  async function txtRecords(name) {
+    const data = await dohQuery(name, 'TXT');
+    if (data.Status !== 0 && data.Status !== 3) throw new Error(`DNS ${DNS_RCODE[data.Status] || data.Status}`);
+    return (data.Answer || []).filter((a) => a.type === 16).map((a) => txtValue(a.data));
   }
 
-  // Proxy yang gagal sering membalas 200 berisi JSON atau teks error, bukan HTML.
-  const looksLikeHtml = (s) => /<(?:!doctype|html|head|body|title|meta|a|div|p|script)\b/i.test(s.slice(0, 50000));
-
-  /** Coba setiap proxy sampai satu berhasil; tiap percobaan dibatasi 8 detik termasuk membaca body. */
-  async function fetchViaProxies(target, signal, onUpdate) {
-    const attempts = [];
-    for (const proxy of CRAWL_PROXIES) {
-      const attempt = { name: proxy.name, state: 'pending', detail: '' };
-      attempts.push(attempt);
-      onUpdate(attempts);
-      const ctrl = new AbortController();
-      let timedOut = false;
-      const stop = () => ctrl.abort();
-      const timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, REQUEST_TIMEOUT);
-      signal.addEventListener('abort', stop, { once: true });
-      const t0 = performance.now();
-      try {
-        const res = await fetchWithTimeout(proxy.url(target), { signal: ctrl.signal, cache: 'no-store' });
-        const out = await proxy.read(res);
-        if (!out.html.trim()) throw new Error('respons kosong');
-        if (!looksLikeHtml(out.html)) throw new Error('respons bukan HTML (kemungkinan pesan error proxy)');
-        attempt.state = 'ok';
-        attempt.detail = formatMs(performance.now() - t0);
-        onUpdate(attempts);
-        return { ...out, proxy: proxy.name, elapsedMs: Math.round(performance.now() - t0), attempts };
-      } catch (err) {
-        if (signal.aborted) throw new DOMException('Dibatalkan', 'AbortError');
-        attempt.state = 'fail';
-        attempt.detail = timedOut ? 'timeout 8 detik' : friendlyError(err);
-        onUpdate(attempts);
-      } finally {
-        clearTimeout(timer);
-        signal.removeEventListener('abort', stop);
-      }
+  // CAA bisa datang sebagai teks ("0 issue \"ca.com\"") atau hex RFC 3597 ("\# 19 00 05 ...").
+  function parseCaa(data) {
+    const s = String(data).trim();
+    const hex = s.match(/^\\#\s+\d+\s+([0-9a-f\s]+)$/i);
+    if (hex) {
+      const bytes = hex[1].replace(/\s+/g, '').match(/../g).map((h) => parseInt(h, 16));
+      const tagLen = bytes[1];
+      const tag = String.fromCharCode(...bytes.slice(2, 2 + tagLen));
+      const value = String.fromCharCode(...bytes.slice(2 + tagLen));
+      return { flags: bytes[0], tag: tag.toLowerCase(), value };
     }
-    const err = new Error('Semua proxy gagal mengambil halaman');
-    err.attempts = attempts;
-    throw err;
+    const m = s.match(/^(\d+)\s+(\S+)\s+"?(.*?)"?$/);
+    return m ? { flags: Number(m[1]), tag: m[2].toLowerCase(), value: m[3] } : { flags: 0, tag: '?', value: s };
   }
 
-  /** Parse HTML tanpa mengeksekusinya (DOMParser tidak menjalankan script atau memuat gambar). */
-  function parsePage(html, pageUrl) {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    const baseEl = doc.querySelector('base[href]');
-    let base = pageUrl;
-    if (baseEl) { try { base = new URL(baseEl.getAttribute('href'), pageUrl).href; } catch { /* base tidak valid, pakai URL halaman */ } }
-    const resolve = (v) => { try { return new URL(String(v).trim(), base).href; } catch { return null; } };
-    const pageHost = stripWww(new URL(pageUrl).hostname);
-    const isInternal = (u) => stripWww(hostOf(u)) === pageHost;
-
-    const internal = new Map(), external = new Map(), emails = new Set();
-    let blankNoOpener = 0;
-    for (const a of doc.querySelectorAll('a[href]')) {
-      const href = a.getAttribute('href').trim();
-      if (/^mailto:/i.test(href)) {
-        let addr = href.slice(7).split('?')[0];
-        try { addr = decodeURIComponent(addr); } catch { /* biarkan apa adanya */ }
-        addr.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean).forEach((e) => emails.add(e));
-        continue;
-      }
-      if (!href || href.startsWith('#') || /^(javascript|tel|data|sms):/i.test(href)) continue;
-      const abs = resolve(href);
-      if (!abs || !/^https?:/i.test(abs)) continue;
-      const rel = (a.getAttribute('rel') || '').toLowerCase();
-      if (a.getAttribute('target') === '_blank' && !/noopener|noreferrer/.test(rel)) blankNoOpener++;
-      const text = (a.textContent || a.getAttribute('title') || a.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 120);
-      const bucket = isInternal(abs) ? internal : external;
-      if (!bucket.has(abs)) bucket.set(abs, { url: abs, text });
+  function parseTags(record) {
+    const tags = {};
+    for (const part of record.split(';')) {
+      const i = part.indexOf('=');
+      if (i > 0) tags[part.slice(0, i).trim().toLowerCase()] = part.slice(i + 1).trim();
     }
-
-    const urlsOf = (nodes, attr) => unique(nodes.map((n) => n.getAttribute(attr)).filter(Boolean).map(resolve).filter((u) => u && /^https?:/i.test(u)));
-    const scripts = urlsOf([...doc.querySelectorAll('script[src]')], 'src').map((url) => ({ url }));
-    const stylesheets = urlsOf([...doc.querySelectorAll('link[href]')].filter((l) => /\bstylesheet\b/i.test(l.getAttribute('rel') || '')), 'href').map((url) => ({ url }));
-    const imgMap = new Map();
-    for (const img of doc.querySelectorAll('img')) {
-      const src = img.getAttribute('src') || img.getAttribute('data-src');
-      if (!src || /^data:/i.test(src)) continue;
-      const abs = resolve(src);
-      if (abs && /^https?:/i.test(abs) && !imgMap.has(abs)) imgMap.set(abs, { url: abs, text: (img.getAttribute('alt') || '').trim().slice(0, 120) });
-    }
-
-    const forms = [...doc.querySelectorAll('form')].map((f, i) => {
-      const action = resolve(f.getAttribute('action') || pageUrl) || pageUrl;
-      const fields = [...f.querySelectorAll('input, select, textarea')]
-        .filter((el) => (el.getAttribute('type') || '').toLowerCase() !== 'submit')
-        .map((el) => ({ name: el.getAttribute('name') || '', type: (el.getAttribute('type') || el.tagName).toLowerCase() }));
-      return {
-        index: i + 1,
-        action,
-        method: (f.getAttribute('method') || 'GET').toUpperCase(),
-        fields,
-        hasPassword: fields.some((x) => x.type === 'password'),
-        externalAction: !isInternal(action),
-        insecure: /^http:/i.test(action),
-      };
-    });
-
-    // Filter TLD ekstensi file agar "logo@2x.png" tidak terbaca sebagai email.
-    const bodyText = (doc.body?.textContent || '').replace(/\s+/g, ' ').trim();
-    for (const m of (bodyText + ' ' + html).matchAll(/\b[a-z0-9._%+-]+@(?:[a-z0-9-]+\.)+[a-z]{2,24}\b/gi)) {
-      if (!FILE_EXT.has(m[0].split('.').pop().toLowerCase())) emails.add(m[0].toLowerCase());
-    }
-
-    const meta = (sel) => (doc.querySelector(sel)?.getAttribute('content') || '').trim();
-    return {
-      url: pageUrl,
-      host: pageHost,
-      title: (doc.querySelector('title')?.textContent || '').replace(/\s+/g, ' ').trim(),
-      description: meta('meta[name="description" i]') || meta('meta[property="og:description" i]'),
-      lang: doc.documentElement.getAttribute('lang') || '',
-      generator: meta('meta[name="generator" i]'),
-      robots: meta('meta[name="robots" i]'),
-      canonical: resolve(doc.querySelector('link[rel="canonical" i]')?.getAttribute('href') || '') || '',
-      inlineScripts: doc.querySelectorAll('script:not([src])').length,
-      textLength: bodyText.length,
-      blankNoOpener,
-      internal: [...internal.values()],
-      external: [...external.values()],
-      scripts,
-      stylesheets,
-      images: [...imgMap.values()],
-      forms,
-      emails: [...emails].sort().map((email) => ({ email })),
-    };
+    return tags;
   }
 
-  /** Observasi keamanan yang bisa dibuktikan langsung dari HTML. */
-  function crawlNotes(d) {
+  /** Hitung DNS lookup SPF secara rekursif; RFC 7208 membatasi 10, lebih dari itu menjadi permerror. */
+  async function spfLookups(record, seen = new Set(), depth = 0) {
+    let count = 0;
     const notes = [];
-    const pageHttps = d.url.startsWith('https:');
-    if (!pageHttps) notes.push(['warn', 'Halaman disajikan lewat HTTP tanpa enkripsi.']);
-    const mixed = [...d.scripts, ...d.stylesheets, ...d.images].filter((x) => x.url.startsWith('http:'));
-    if (pageHttps && mixed.length) notes.push(['warn', `${mixed.length} aset dimuat lewat HTTP di halaman HTTPS (mixed content).`]);
-    for (const f of d.forms) {
-      if (f.hasPassword && f.insecure) notes.push(['warn', `Form #${f.index} mengirim password ke URL HTTP tanpa enkripsi.`]);
-      else if (f.hasPassword && f.externalAction) notes.push(['warn', `Form #${f.index} mengirim password ke domain lain: ${esc(hostOf(f.action))}.`]);
-      else if (f.insecure && pageHttps) notes.push(['warn', `Form #${f.index} mengirim data ke URL HTTP.`]);
+    for (const raw of record.split(/\s+/).slice(1)) {
+      const term = raw.replace(/^[+\-~?]/, '').toLowerCase();
+      if (!/^(include:|a$|a:|a\/|mx$|mx:|mx\/|ptr|exists:|redirect=)/.test(term)) continue;
+      count++;
+      if (term.startsWith('ptr')) notes.push('Mekanisme ptr sudah tidak direkomendasikan (RFC 7208).');
+      const target = term.startsWith('include:') ? term.slice(8) : term.startsWith('redirect=') ? term.slice(9) : null;
+      if (!target || depth >= 10 || count > 10) continue;
+      if (seen.has(target)) { notes.push(`Include berulang ke ${target}.`); continue; }
+      seen.add(target);
+      try {
+        const sub = (await txtRecords(target)).find((t) => /^v=spf1\b/i.test(t));
+        if (!sub) { notes.push(`${target} tidak memiliki record SPF.`); continue; }
+        const nested = await spfLookups(sub, seen, depth + 1);
+        count += nested.count;
+        notes.push(...nested.notes);
+      } catch (err) {
+        notes.push(`Gagal membaca ${target}: ${friendlyError(err)}.`);
+      }
     }
-    const thirdParty = unique(d.scripts.map((s) => stripWww(hostOf(s.url))).filter((h) => h && h !== d.host));
-    if (thirdParty.length) {
-      const shown = thirdParty.slice(0, 5).map((h) => `<span class="mono">${esc(h)}</span>`).join(', ');
-      notes.push(['info', `Script pihak ketiga dari ${thirdParty.length} domain: ${shown}${thirdParty.length > 5 ? ', dan lainnya' : ''}.`]);
+    return { count, notes };
+  }
+
+  async function checkSpf(domain, hasMx) {
+    const records = (await txtRecords(domain)).filter((t) => /^v=spf1\b/i.test(t));
+    if (!records.length) {
+      return { status: 'fail', title: 'SPF', summary: 'Tidak ada record SPF. Siapa pun bisa mengirim email atas nama domain ini tanpa ditolak berdasarkan SPF.',
+        advice: hasMx ? 'Tambahkan TXT v=spf1 berisi server pengirim yang sah, diakhiri -all atau ~all.' : 'Domain tanpa MX sebaiknya memasang TXT "v=spf1 -all" agar tidak bisa dipalsukan.' };
     }
-    if (d.blankNoOpener) notes.push(['info', `${d.blankNoOpener} link <code>target="_blank"</code> tanpa <code>rel="noopener"</code> (risiko tabnabbing di browser lama).`]);
-    if (d.textLength < 200 && (d.scripts.length || d.inlineScripts)) {
-      notes.push(['info', 'Teks halaman sangat sedikit. Konten kemungkinan dirender JavaScript dan tidak terbaca crawler ini, yang hanya membaca HTML awal.']);
+    if (records.length > 1) {
+      return { status: 'fail', title: 'SPF', summary: `Ada ${records.length} record SPF. Penerima akan menganggapnya permerror dan SPF tidak berlaku.`, record: records.join('\n'), advice: 'Gabungkan menjadi satu record v=spf1.' };
     }
-    return notes;
+    const rec = records[0];
+    const all = (rec.match(/\s([+\-~?]?)all\b/i) || [])[1];
+    const { count, notes } = await spfLookups(rec);
+    let status = 'pass';
+    let summary;
+    if (all === '-') summary = 'Kebijakan -all (hard fail): server di luar daftar ditolak.';
+    else if (all === '~') { status = 'warn'; summary = 'Kebijakan ~all (soft fail): email palsu biasanya hanya ditandai, tidak ditolak.'; }
+    else if (all === '?' ) { status = 'fail'; summary = 'Kebijakan ?all (neutral): SPF tidak memberi perlindungan.'; }
+    else if (all === '+' || all === '') { status = 'fail'; summary = '+all mengizinkan server mana pun mengirim atas nama domain ini.'; }
+    else if (/redirect=/i.test(rec)) summary = 'Kebijakan diambil dari domain lain lewat redirect.';
+    else { status = 'warn'; summary = 'Tidak ada mekanisme all di akhir record.'; }
+    if (count > 10) {
+      status = 'fail';
+      notes.unshift(summary);
+      summary = `${count} DNS lookup, melebihi batas 10: penerima menganggap SPF error (permerror) dan tidak menerapkannya.`;
+    } else notes.unshift(`${count} dari maksimal 10 DNS lookup.`);
+    return { status, title: 'SPF', summary, detail: notes, record: rec,
+      advice: status === 'pass' ? '' : count > 10 ? 'Kurangi include atau ganti dengan blok IP (ip4:/ip6:).' : 'Setelah semua pengirim sah terdaftar, ubah akhir record menjadi -all.' };
   }
 
-  function renderAttempts(attempts) {
-    const list = $('#crawlAttempts');
-    list.hidden = false;
-    const label = { pending: 'Mencoba', ok: 'Berhasil', fail: 'Gagal' };
-    list.innerHTML = attempts.map((a) => `
-      <li class="attempt attempt-${a.state}">
-        <span class="attempt-state">${a.state === 'pending' ? '<span class="spinner" aria-hidden="true"></span> ' : ''}${label[a.state]}</span>
-        <span class="mono">${esc(a.name)}</span>
-        ${a.detail ? `<span class="muted">${esc(a.detail)}</span>` : ''}
-      </li>`).join('');
+  async function checkDmarc(domain) {
+    const records = (await txtRecords('_dmarc.' + domain)).filter((t) => /^v=DMARC1\b/i.test(t));
+    if (!records.length) {
+      return { status: 'fail', title: 'DMARC', summary: 'Tidak ada record DMARC di _dmarc.' + domain + '. Penerima tidak punya instruksi untuk email yang gagal SPF/DKIM.',
+        advice: 'Mulai dengan "v=DMARC1; p=none; rua=mailto:alamat@domain-anda" untuk memantau, lalu naikkan ke quarantine dan reject.' };
+    }
+    if (records.length > 1) return { status: 'fail', title: 'DMARC', summary: 'Ada lebih dari satu record DMARC; penerima akan mengabaikan semuanya.', record: records.join('\n'), advice: 'Sisakan satu record.' };
+    const rec = records[0];
+    const t = parseTags(rec);
+    const p = (t.p || '').toLowerCase();
+    const detail = [];
+    let status = p === 'reject' ? 'pass' : p === 'quarantine' ? 'pass' : 'warn';
+    let summary = p === 'reject' ? 'Kebijakan reject: email palsu ditolak.' : p === 'quarantine' ? 'Kebijakan quarantine: email palsu masuk spam.' : p === 'none' ? 'Kebijakan none: hanya memantau, email palsu tetap terkirim.' : `Tag p tidak valid (${p || 'kosong'}).`;
+    if (!['none', 'quarantine', 'reject'].includes(p)) status = 'fail';
+    if (t.pct && Number(t.pct) < 100) { detail.push(`pct=${t.pct}: kebijakan hanya berlaku untuk ${t.pct}% email.`); if (status === 'pass') status = 'warn'; }
+    if (t.sp) detail.push(`Subdomain (sp): ${t.sp}.`);
+    detail.push(t.rua ? `Laporan agregat dikirim ke ${t.rua}.` : 'Tidak ada rua: Anda tidak menerima laporan siapa yang mengirim atas nama domain ini.');
+    if (p === 'quarantine') detail.push('Pertimbangkan reject setelah laporan menunjukkan semua pengirim sah sudah lolos.');
+    return { status, title: 'DMARC', summary, detail, record: rec,
+      advice: status === 'pass' ? '' : 'Naikkan p ke quarantine lalu reject setelah memantau laporan rua.' };
   }
 
-  // Path relatif lebih mudah dipindai daripada URL penuh yang host-nya berulang.
-  function pathOf(u) {
-    try { const x = new URL(u); return (x.pathname + x.search + x.hash) || '/'; } catch { return u; }
+  // Panjang kunci RSA diperkirakan dari ukuran DER public key di tag p=.
+  function dkimKeyBits(p) {
+    try { const len = atob(p.replace(/\s+/g, '')).length; return len > 500 ? 4096 : len > 250 ? 2048 : len > 130 ? 1024 : 512; } catch { return null; }
   }
 
-  function urlRow(item, { showHost }) {
-    const label = showHost ? item.url : pathOf(item.url);
-    return `
-      <div class="result-row">
-        <span class="value">
-          <a class="mono" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer nofollow" title="${esc(item.url)}">${esc(label)}</a>
-          ${item.text ? `<span class="row-text">${esc(item.text)}</span>` : ''}
-        </span>
-        <button type="button" class="copy-btn" data-copy="${esc(item.url)}" aria-label="Copy ${esc(item.url)}">Copy</button>
-      </div>`;
-  }
-
-  function filteredItems() {
-    const q = $('#crawlFilter').value.trim().toLowerCase();
-    return crawlData[crawlTab].filter((it) => !q || JSON.stringify(it).toLowerCase().includes(q));
-  }
-
-  function renderCrawlList() {
-    if (!crawlData) return;
-    $$('#crawlTabs .count-tab').forEach((b) => {
-      const active = b.dataset.key === crawlTab;
-      b.setAttribute('aria-selected', String(active));
-      b.tabIndex = active ? 0 : -1;
+  async function checkDkim(domain) {
+    const found = [];
+    await Promise.all(DKIM_SELECTORS.map(async (sel) => {
+      try {
+        const rec = (await txtRecords(`${sel}._domainkey.${domain}`)).find((x) => /\bp=/i.test(x) || /^v=DKIM1/i.test(x));
+        if (rec) found.push({ sel, rec });
+      } catch { /* selector tidak ada atau query gagal: lanjut */ }
+    }));
+    if (!found.length) {
+      return { status: 'info', title: 'DKIM', summary: `Tidak ditemukan di ${DKIM_SELECTORS.length} selector umum.`,
+        detail: ['Selector DKIM bebas dinamai pengirim, jadi hasil ini belum berarti DKIM tidak dipakai. Cek header DKIM-Signature (s=) di email asli dari domain ini.'] };
+    }
+    let status = 'pass';
+    const detail = found.sort((a, b) => a.sel.localeCompare(b.sel)).map(({ sel, rec }) => {
+      const p = parseTags(rec).p || '';
+      if (!p) return `${sel}: kunci dicabut (p= kosong).`;
+      const bits = dkimKeyBits(p);
+      if (bits && bits < 2048) status = 'warn';
+      return `${sel}: kunci ${bits ? `RSA ±${bits} bit` : 'tidak terbaca'}${bits && bits < 2048 ? ', disarankan 2048 bit' : ''}.`;
     });
-    const items = filteredItems();
-    const list = $('#crawlList');
-    if (!items.length) {
-      const emptyMsg = CRAWL_TABS.find(([k]) => k === crawlTab)[2];
-      list.innerHTML = `<div class="empty">${$('#crawlFilter').value.trim() ? 'Tidak ada item yang cocok dengan filter.' : esc(emptyMsg)}</div>`;
-      return;
-    }
+    return { status, title: 'DKIM', summary: `Ditemukan ${found.length} selector.`, detail, record: found.map(({ sel, rec }) => `${sel}._domainkey: ${rec}`).join('\n'),
+      advice: status === 'pass' ? '' : 'Rotasi kunci DKIM ke RSA 2048 bit.' };
+  }
 
-    if (crawlTab === 'forms') {
-      list.innerHTML = items.map((f) => `
-        <div class="result-group">
-          <div class="result-group-head">
-            <span>Form #${f.index} <span class="badge badge-muted mono">${esc(f.method)}</span></span>
-            <span class="flex flex-wrap gap-1">
-              ${f.hasPassword ? '<span class="badge badge-warn">field password</span>' : ''}
-              ${f.externalAction ? '<span class="badge badge-warn">action ke domain lain</span>' : ''}
-              ${f.insecure ? '<span class="badge badge-warn">action HTTP</span>' : ''}
-            </span>
-          </div>
-          <div class="result-row"><span class="value"><span class="muted text-xs">Action</span><br><a class="mono" href="${esc(f.action)}" target="_blank" rel="noopener noreferrer nofollow">${esc(f.action)}</a></span></div>
-          <div class="result-row"><span class="value">
-            ${f.fields.length ? f.fields.map((x) => `<span class="field-chip mono">${esc(x.name || '(tanpa nama)')} <span class="muted">${esc(x.type)}</span></span>`).join('') : '<span class="muted">Tidak ada field input.</span>'}
-          </span></div>
-        </div>`).join('');
-      return;
-    }
+  async function checkMx(domain) {
+    const data = await dohQuery(domain, 'MX');
+    const mx = (data.Answer || []).filter((a) => a.type === 15).map((a) => a.data.replace(/\.$/, '')).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+    if (!mx.length) return { status: 'info', title: 'MX', summary: 'Domain tidak menerima email (tidak ada record MX).', hasMx: false };
+    const nullMx = mx.length === 1 && /^0\s*\.?$/.test(mx[0]);
+    return { status: 'info', title: 'MX', summary: nullMx ? 'Null MX: domain menyatakan tidak menerima email.' : `${mx.length} server penerima email.`, record: mx.join('\n'), hasMx: !nullMx };
+  }
 
-    if (crawlTab === 'emails') {
-      list.innerHTML = `<div class="result-group">${items.map((e) => `
-        <div class="result-row"><span class="value mono">${esc(e.email)}</span><button type="button" class="copy-btn" data-copy="${esc(e.email)}">Copy</button></div>`).join('')}</div>`;
-      return;
-    }
+  async function checkSimpleTxt(name, prefix, title, okText, missText, advice) {
+    const rec = (await txtRecords(name)).find((t) => t.toLowerCase().startsWith(prefix.toLowerCase()));
+    return rec ? { status: 'pass', title, summary: okText, record: rec } : { status: 'info', title, summary: missText, advice };
+  }
 
-    if (crawlTab === 'internal') {
-      list.innerHTML = `<div class="result-group">${items.map((it) => urlRow(it, { showHost: false })).join('')}</div>`;
-      return;
+  async function checkCaa(domain) {
+    const data = await dohQuery(domain, 'CAA');
+    const recs = (data.Answer || []).filter((a) => a.type === 257).map((a) => parseCaa(a.data));
+    if (!recs.length) {
+      return { status: 'warn', title: 'CAA', summary: 'Tidak ada record CAA: CA mana pun boleh menerbitkan sertifikat TLS untuk domain ini.',
+        advice: 'Tambahkan CAA "0 issue" untuk CA yang Anda pakai, misalnya letsencrypt.org.' };
     }
+    const issuers = recs.filter((r) => r.tag === 'issue' || r.tag === 'issuewild').map((r) => `${r.tag} ${r.value || '";" (dilarang)'}`);
+    const iodef = recs.filter((r) => r.tag === 'iodef').map((r) => r.value);
+    return { status: 'pass', title: 'CAA', summary: `Penerbitan sertifikat dibatasi ke ${issuers.length} aturan.`, detail: iodef.length ? [`Laporan pelanggaran ke ${iodef.join(', ')}.`] : [],
+      record: recs.map((r) => `${r.flags} ${r.tag} "${r.value}"`).join('\n') };
+  }
 
-    // Aset dan link eksternal dikelompokkan per host: inventaris pihak ketiga langsung terlihat.
-    const groups = new Map();
-    for (const it of items) {
-      const h = hostOf(it.url);
-      if (!groups.has(h)) groups.set(h, []);
-      groups.get(h).push(it);
-    }
-    list.innerHTML = [...groups.entries()].sort((a, b) => b[1].length - a[1].length).map(([h, rows]) => `
-      <div class="result-group">
-        <div class="result-group-head">
-          <span class="mono">${esc(h)}${stripWww(h) === crawlData.host ? ' <span class="muted font-normal">(domain ini)</span>' : ''}</span>
-          <span class="count">${rows.length}</span>
+  async function checkDnssec(domain) {
+    const [ds, a] = await Promise.all([
+      dohQuery(domain, 'DS'),
+      fetchWithTimeout(`${DOH_URL}?name=${encodeURIComponent(domain)}&type=SOA&do=true`, { headers: { Accept: 'application/dns-json' } }).then((r) => r.json()),
+    ]);
+    const hasDs = (ds.Answer || []).some((x) => x.type === 43);
+    if (a.AD) return { status: 'pass', title: 'DNSSEC', summary: 'Aktif dan tervalidasi (resolver mengembalikan flag AD).' };
+    if (hasDs) return { status: 'fail', title: 'DNSSEC', summary: 'Ada record DS di parent, tetapi validasi gagal. Resolver yang memvalidasi bisa menolak domain ini.', advice: 'Periksa kecocokan DS dengan kunci DNSKEY di DNS provider.' };
+    return { status: 'warn', title: 'DNSSEC', summary: 'Tidak aktif: jawaban DNS domain ini tidak ditandatangani.', advice: 'Aktifkan DNSSEC di DNS provider lalu pasang record DS di registrar.' };
+  }
+
+  async function checkNs(domain) {
+    const data = await dohQuery(domain, 'NS');
+    const ns = (data.Answer || []).filter((a) => a.type === 2).map((a) => a.data.replace(/\.$/, '')).sort();
+    if (data.Status === 3) throw new Error('Domain tidak ada (NXDOMAIN)');
+    return { status: 'info', title: 'Nameserver', summary: ns.length ? `${ns.length} nameserver.` : 'Tidak ada record NS di level ini (kemungkinan subdomain).', record: ns.join('\n') };
+  }
+
+  // Satu pemeriksaan yang gagal query tidak boleh menggagalkan seluruh laporan.
+  async function safeCheck(title, fn) {
+    try { return await fn(); } catch (err) { return { status: 'error', title, summary: `Query gagal: ${friendlyError(err)}.` }; }
+  }
+
+  function renderMailReport(r) {
+    const tally = ['fail', 'warn', 'pass'].map((s) => `<strong>${r.checks.filter((c) => c.status === s).length}</strong> ${CHECK_LABEL[s].toLowerCase()}`).join(' · ');
+    $('#mailMeta').textContent = `Diperiksa ${new Date(r.checkedAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })} lewat Cloudflare DoH`;
+    $('#mailTitle').textContent = r.domain;
+    $('#mailTally').innerHTML = tally;
+    $('#mailChecks').innerHTML = r.checks.map((c) => `
+      <li class="finding">
+        <div class="check-head">
+          <span class="pill pill-${CHECK_TONE[c.status]}">${CHECK_LABEL[c.status]}</span>
+          <h4 class="check-title">${esc(c.title)}</h4>
         </div>
-        ${rows.map((it) => urlRow(it, { showHost: false })).join('')}
-      </div>`).join('');
+        <p class="check-summary">${esc(c.summary)}</p>
+        ${c.detail && c.detail.length ? `<ul class="check-detail">${c.detail.map((d) => `<li>${esc(d)}</li>`).join('')}</ul>` : ''}
+        ${c.record ? `<div class="check-record"><pre class="code mono">${esc(c.record)}</pre><button type="button" class="copy-btn" data-copy="${esc(c.record)}" aria-label="Copy record ${esc(c.title)}">Copy</button></div>` : ''}
+        ${c.advice ? `<p class="check-advice"><strong>Saran:</strong> ${esc(c.advice)}</p>` : ''}
+      </li>`).join('');
+    $('#mailEmpty').hidden = true;
+    $('#mailReport').hidden = false;
   }
 
-  function renderCrawlReport(d) {
-    const fetched = new Date(d.fetchedAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
-    $('#crawlMeta').textContent = `Diambil ${fetched} lewat ${d.proxy}`;
-    $('#crawlTitle').textContent = d.title || '(halaman tanpa title)';
-    $('#crawlTitle').classList.toggle('muted', !d.title);
-    const link = $('#crawlLink');
-    link.href = d.url;
-    link.textContent = d.url;
-    $('#crawlDesc').textContent = d.description || 'Tidak ada meta description.';
-    $('#crawlDesc').classList.toggle('muted', !d.description);
-
-    const facts = [
-      ['Status HTTP', d.httpStatus ? String(d.httpStatus) : 'Tidak dilaporkan proxy'],
-      ['Ukuran HTML', `${(d.bytes / 1024).toFixed(1)} KB${d.truncated ? ' (dipotong)' : ''}`],
-      ['Waktu ambil', formatMs(d.elapsedMs)],
-      ['Script inline', String(d.inlineScripts)],
-      ...(d.lang ? [['Bahasa', d.lang]] : []),
-      ...(d.generator ? [['Generator', d.generator]] : []),
-      ...(d.robots ? [['Robots', d.robots]] : []),
-      ...(d.canonical && d.canonical !== d.url ? [['Canonical', d.canonical]] : []),
-    ];
-    $('#crawlFacts').innerHTML = facts.map(([k, v]) => `<div${k === 'Canonical' ? ' class="fact-wide"' : ''}><dt>${esc(k)}</dt><dd${k === 'Canonical' ? ' class="mono"' : ''}>${esc(v)}</dd></div>`).join('');
-
-    const notes = crawlNotes(d);
-    $('#crawlNotes').innerHTML = notes.length
-      ? `<h4 class="notes-title">Catatan keamanan</h4><ul class="notes">${notes.map(([tone, html]) => `<li class="note note-${tone}"><span class="note-label">${tone === 'warn' ? 'Perhatian' : 'Info'}</span><span>${html}</span></li>`).join('')}</ul>`
-      : '<p class="muted text-sm">Tidak ada catatan keamanan dari HTML halaman ini.</p>';
-
-    $('#crawlTabs').innerHTML = CRAWL_TABS.map(([key, label]) => `
-      <button type="button" class="count-tab" role="tab" id="ctab-${key}" data-key="${key}" aria-controls="crawlTabPanel" aria-selected="false" tabindex="-1">
-        <span class="n${d[key].length ? '' : ' zero'}">${d[key].length}</span><span class="l">${label}</span>
-      </button>`).join('');
-    $('#crawlFilter').value = '';
-    $('#crawlEmpty').hidden = true;
-    $('#crawlReport').hidden = false;
-    renderCrawlList();
+  function mailReportText(r) {
+    const lines = [`Email & DNS Check: ${r.domain}`, `Diperiksa: ${r.checkedAt}`, ''];
+    for (const c of r.checks) {
+      lines.push(`[${CHECK_LABEL[c.status]}] ${c.title}: ${c.summary}`);
+      (c.detail || []).forEach((d) => lines.push(`  - ${d}`));
+      if (c.record) lines.push(...c.record.split('\n').map((x) => `  > ${x}`));
+      if (c.advice) lines.push(`  Saran: ${c.advice}`);
+      lines.push('');
+    }
+    return lines.join('\n').trim();
   }
 
-  function setCrawlBusy(busy) {
-    $('#crawlStart').disabled = busy;
-    $('#crawlCancel').hidden = !busy;
-    $('#crawlUrl').readOnly = busy;
-  }
-
-  async function startCrawl() {
-    if (crawlAbort) return;
-    const status = $('#crawlStatus');
-    let target;
-    try { target = toHttpUrl($('#crawlUrl').value); } catch (err) {
-      status.innerHTML = alertBox('error', esc(err.message === 'Invalid URL' ? 'URL tidak valid. Contoh: https://example.com' : err.message));
-      $('#crawlUrl').focus();
+  async function runMailCheck() {
+    if (mailBusy) return;
+    const status = $('#mailStatus');
+    const domain = normalizeDomain($('#mailDomain').value);
+    if (!DOMAIN_RE.test(domain)) {
+      status.innerHTML = alertBox('error', 'Domain tidak valid. Contoh: <code>example.com</code>');
+      $('#mailDomain').focus();
       return;
     }
-    $('#crawlUrl').value = target.href;
-    status.innerHTML = '';
-    $('#crawlReport').hidden = true;
-    $('#crawlEmpty').hidden = true;
-    crawlAbort = new AbortController();
-    setCrawlBusy(true);
+    $('#mailDomain').value = domain;
+    mailBusy = true;
+    $('#mailStart').disabled = true;
+    status.innerHTML = spinner(`Membaca record DNS ${domain} (sekitar 25 query)…`);
     try {
-      const res = await fetchViaProxies(target.href, crawlAbort.signal, renderAttempts);
-      const truncated = res.html.length > MAX_HTML_CHARS;
-      const html = truncated ? res.html.slice(0, MAX_HTML_CHARS) : res.html;
-      crawlData = {
-        ...parsePage(html, target.href),
-        fetchedAt: new Date().toISOString(),
-        proxy: res.proxy,
-        httpStatus: res.httpStatus,
-        bytes: utf8.encode(html).length,
-        truncated,
-        elapsedMs: res.elapsedMs,
-      };
-      crawlTab = 'internal';
-      renderCrawlReport(crawlData);
-      $('#crawlAttempts').hidden = true;
+      const mx = await safeCheck('MX', () => checkMx(domain));
+      // Query pertama gagal hampir selalu berarti offline atau DoH diblokir; jangan tampilkan laporan kosong.
+      if (mx.status === 'error') throw new Error(mx.summary.replace(/^Query gagal: |\.$/g, ''));
+      const hasMx = mx.hasMx !== false;
+      const rest = await Promise.all([
+        safeCheck('SPF', () => checkSpf(domain, hasMx)),
+        safeCheck('DMARC', () => checkDmarc(domain)),
+        safeCheck('DKIM', () => checkDkim(domain)),
+        safeCheck('MTA-STS', () => checkSimpleTxt('_mta-sts.' + domain, 'v=STSv1', 'MTA-STS', 'Aktif: server pengirim diminta memakai TLS terverifikasi ke MX Anda.', 'Tidak aktif: email ke domain ini bisa diturunkan ke koneksi tanpa TLS oleh penyerang di jalur.', hasMx ? 'Pasang TXT _mta-sts dan file kebijakan di https://mta-sts.<domain>/.well-known/mta-sts.txt.' : '')),
+        safeCheck('TLS-RPT', () => checkSimpleTxt('_smtp._tls.' + domain, 'v=TLSRPTv1', 'TLS-RPT', 'Aktif: Anda menerima laporan kegagalan TLS saat email dikirim ke domain ini.', 'Tidak aktif: kegagalan TLS ke server email Anda tidak dilaporkan.', hasMx ? 'Tambahkan TXT _smtp._tls "v=TLSRPTv1; rua=mailto:...".' : '')),
+        safeCheck('BIMI', () => checkSimpleTxt('default._bimi.' + domain, 'v=BIMI1', 'BIMI', 'Logo merek terdaftar untuk ditampilkan di klien email yang mendukung.', 'Tidak ada record BIMI (opsional, butuh DMARC quarantine atau reject).', '')),
+        safeCheck('CAA', () => checkCaa(domain)),
+        safeCheck('DNSSEC', () => checkDnssec(domain)),
+        safeCheck('Nameserver', () => checkNs(domain)),
+      ]);
+      const checks = [mx, ...rest];
+      const nx = checks.find((c) => c.title === 'Nameserver' && /NXDOMAIN/.test(c.summary));
+      if (nx) throw new Error(`Domain ${domain} tidak ada (NXDOMAIN)`);
+      checks.forEach((c) => delete c.hasMx);
+      checks.sort((a, b) => CHECK_ORDER[a.status] - CHECK_ORDER[b.status]);
+      mailReport = { domain, checkedAt: new Date().toISOString(), checks };
+      renderMailReport(mailReport);
+      status.innerHTML = '';
     } catch (err) {
-      if (err.name === 'AbortError') {
-        status.innerHTML = alertBox('info', 'Crawl dibatalkan.');
-      } else {
-        status.innerHTML = alertBox('error', `<strong>Halaman tidak bisa diambil.</strong> Semua proxy gagal (rincian di atas). Penyebab umum: proxy publik sedang down atau kena rate limit, situs memblokir proxy, atau URL salah ketik. Coba lagi beberapa menit lagi, atau cek URL dengan tool <em>Is It Down</em>.`);
-      }
+      status.innerHTML = alertBox('error', `<strong>Pemeriksaan gagal.</strong> ${esc(friendlyError(err))}. Periksa ejaan domain dan koneksi internet, lalu coba lagi.`);
     } finally {
-      crawlAbort = null;
-      setCrawlBusy(false);
+      mailBusy = false;
+      $('#mailStart').disabled = false;
     }
   }
 
-  $('#crawlForm').addEventListener('submit', (e) => { e.preventDefault(); startCrawl(); });
-  $('#crawlCancel').addEventListener('click', () => { if (crawlAbort) crawlAbort.abort(); });
-  $('#crawlTabs').addEventListener('click', (e) => {
-    const btn = e.target.closest('.count-tab');
-    if (btn) { crawlTab = btn.dataset.key; renderCrawlList(); }
-  });
-  $('#crawlTabs').addEventListener('keydown', (e) => {
-    const keys = CRAWL_TABS.map(([k]) => k);
-    let i = keys.indexOf(crawlTab);
-    if (e.key === 'ArrowRight') i = (i + 1) % keys.length;
-    else if (e.key === 'ArrowLeft') i = (i - 1 + keys.length) % keys.length;
-    else if (e.key === 'Home') i = 0;
-    else if (e.key === 'End') i = keys.length - 1;
-    else return;
-    e.preventDefault();
-    crawlTab = keys[i];
-    renderCrawlList();
-    $(`#ctab-${crawlTab}`).focus();
-  });
-  $('#crawlFilter').addEventListener('input', renderCrawlList);
-  $('#crawlCopy').addEventListener('click', () => {
-    if (!crawlData) return;
-    const items = filteredItems();
-    const lines = crawlTab === 'emails' ? items.map((e) => e.email)
-      : crawlTab === 'forms' ? items.map((f) => `${f.method} ${f.action}`)
-        : items.map((it) => it.url);
-    copyText(lines.join('\n'));
-  });
-  $('#crawlCsv').addEventListener('click', () => {
-    if (!crawlData) return;
-    const rows = [['type', 'url', 'text']];
-    for (const [key] of CRAWL_TABS) {
-      for (const it of crawlData[key]) {
-        if (key === 'forms') rows.push(['form', it.action, `${it.method} ${it.fields.map((f) => f.name || f.type).join(' ')}`]);
-        else if (key === 'emails') rows.push(['email', it.email, '']);
-        else rows.push([key, it.url, it.text || '']);
-      }
-    }
-    download(`crawl-${stamp()}.csv`, toCSV(rows), 'text/csv');
-  });
-  $('#crawlExport').addEventListener('click', () => {
-    if (crawlData) download(`crawl-${stamp()}.json`, JSON.stringify(crawlData, null, 2), 'application/json');
+  $('#mailForm').addEventListener('submit', (e) => { e.preventDefault(); runMailCheck(); });
+  $('#mailCopy').addEventListener('click', () => { if (mailReport) copyText(mailReportText(mailReport)); });
+  $('#mailJson').addEventListener('click', () => {
+    if (mailReport) download(`email-dns-${mailReport.domain}-${stamp()}.json`, JSON.stringify(mailReport, null, 2), 'application/json');
   });
 
   // 8. Is It Down

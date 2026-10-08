@@ -14,7 +14,7 @@ Kumpulan alat cybersecurity harian dalam satu halaman web statis. Dibuat dengan 
 | 4 | **Password** | Generator password (8–64 karakter, uppercase/lowercase/digits/symbols, exclude ambiguous) dan passphrase. Estimasi entropi, label kekuatan, estimasi waktu tebak. | – |
 | 5 | **URL Inspector** | Urai scheme, hostname, port, path, query, fragment. Deteksi punycode/IDN, karakter non-ASCII, campuran skrip (homograph), kredensial di URL, dan cek HTTPS. | – |
 | 6 | **Subdomain Finder** | Cek ±180 subdomain umum via DNS-over-HTTPS Cloudflare. Maks 10 request paralel, progress bar, tombol stop, deteksi wildcard DNS, export CSV/JSON. | ✔ |
-| 7 | **Website Crawler** | Ambil satu halaman via CORS proxy (allorigins, cadangan codetabs dan corsproxy.io), parse dengan `DOMParser`, tampilkan title, meta description, link internal/eksternal, script, stylesheet, gambar, form, dan email, plus catatan keamanan (mixed content, form password ke HTTP/domain lain, script pihak ketiga). Kedalaman 1 level, bisa dibatalkan, export CSV/JSON. | ✔ |
+| 7 | **Email & DNS Check** | Nilai postur keamanan email dan DNS sebuah domain: SPF (termasuk hitungan DNS lookup rekursif, batas 10), DMARC, DKIM (selector umum, perkiraan panjang kunci), MTA-STS, TLS-RPT, BIMI, CAA, DNSSEC, MX, dan nameserver. Hasil diurutkan dari yang perlu diperbaiki, lengkap dengan record mentah dan saran. Copy laporan atau export JSON. | ✔ |
 | 8 | **Is It Down** | Tiga cek paralel (DNS DoH, HTTP HEAD via proxy, koneksi langsung `no-cors`), status Online / Down / DNS-only / Unknown, waktu respons, riwayat 10 cek terakhir di localStorage. | ✔ |
 | 9 | **Network Check** | IP publik, estimasi lokasi & ISP, info `navigator.connection`, status online, user agent, bahasa, timezone, dan latency ke Cloudflare, Google DNS, GitHub. Tombol copy semua. | ✔ |
 
@@ -23,9 +23,8 @@ Kumpulan alat cybersecurity harian dalam satu halaman web statis. Dibuat dengan 
 | Layanan | Dipakai oleh | Data yang terkirim |
 |---------|--------------|--------------------|
 | `cdn.tailwindcss.com` | Semua (styling) | Request standar pemuatan script |
-| `cloudflare-dns.com` (DoH JSON) | Tool 6, 8 | Nama domain yang dicek |
-| `api.allorigins.win` (CORS proxy) | Tool 7, 8 | URL target |
-| `api.codetabs.com`, `corsproxy.io` (proxy cadangan) | Tool 7, hanya jika allorigins gagal | URL target |
+| `cloudflare-dns.com` (DoH JSON) | Tool 6, 7, 8 | Nama domain yang dicek |
+| `api.allorigins.win` (CORS proxy) | Tool 8 | URL target |
 | Target yang Anda masukkan | Tool 8 (koneksi langsung) | Request `no-cors` tanpa cookie |
 | `api.ipify.org`, `ipapi.co` | Tool 9 | IP Anda (otomatis terlihat oleh server) |
 | `1.1.1.1`, `dns.google`, `github.com` | Tool 9 (latency) | Request kecil tanpa cookie |
@@ -74,8 +73,8 @@ LICENSE
 ## Disclaimer etika
 
 - Gunakan tool ini **hanya pada domain, sistem, dan jaringan yang Anda miliki atau yang Anda punya izin tertulis untuk diuji**.
-- Subdomain Finder dan Website Crawler sengaja dibatasi (maks 10 request paralel, kedalaman 1 halaman) agar tidak membebani target. Jangan memodifikasinya untuk scanning massal.
-- Website Crawler dan Is It Down memakai proxy publik pihak ketiga. URL yang Anda masukkan terlihat oleh operator proxy. Jangan masukkan URL internal, token, atau data sensitif.
+- Subdomain Finder sengaja dibatasi (maks 10 request paralel) agar tidak membebani resolver. Jangan memodifikasinya untuk scanning massal.
+- Is It Down memakai proxy publik pihak ketiga untuk cek HTTP. URL yang Anda masukkan terlihat oleh operator proxy. Jangan masukkan URL internal, token, atau data sensitif.
 - Network Check mengirim request ke layanan pihak ketiga yang otomatis melihat IP Anda. Jangan gunakan di jaringan sensitif.
 - Hasil (status, lokasi IP, entropi password, dsb.) bersifat estimasi dan bukan pengganti audit keamanan profesional.
 - Penulis tidak bertanggung jawab atas penyalahgunaan alat ini.
